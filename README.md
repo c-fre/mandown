@@ -5,8 +5,8 @@ Arma 3 all rounder mod for out private server that allows down alerting and ligh
 When a player is downed, the mod:
 
 - Can show them through the Mandown BFT marker system with ACE-style marker text sizing
-- Automatically opens the downed player's map so they can see their position
-- Plays a configurable radio callout over TFAR when supported
+- Allows local voice & map to be used when downed
+- Plays a configurable radio alert sound over TFAR when supported
 
 Gameplay settings can be shared by the server or mission through CBA Settings when Mandown is loaded as a regular server `-mod`. The down-sound choice remains a per-player preference via `ESC -> Options -> Addon Options -> Mandown`.
 
