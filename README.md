@@ -1,13 +1,35 @@
-# @mandown — Mandown
+# @mandown - Mandown
 
 Arma 3 addon that alerts your squad when a player goes unconscious.
 
 When a player is downed, the mod:
-- Marks them on the map with a red cross icon (visible to all players)
+- Can show them through the Mandown BFT marker system with ACE-style marker text sizing
 - Automatically opens the downed player's map so they can see their position
-- Plays a random radio callout over TFAR (or as a 3D world sound if TFAR is not present)
+- Plays a configurable radio callout over TFAR when supported
 
-All features are individually toggleable per-player via **ESC → Options → Addon Options → Mandown**.
+Gameplay settings can be shared by the server or mission through CBA Settings when Mandown is loaded as a regular server `-mod`. The down-sound choice remains a per-player preference via `ESC -> Options -> Addon Options -> Mandown`.
+
+## BFT settings
+
+Mandown now uses one unified local marker pipeline for both normal BFT tracking and downed-player markers. Marker labels are standard `createMarkerLocal` / `setMarkerTextLocal` labels so they inherit the same map text sizing style as ACE BFT.
+
+Shared CBA settings under `Mandown > BFT Ext.`:
+- `Enable BFT`
+- `BFT update interval (seconds)`
+- `BFT display mode`
+  - `All players`
+  - `Leaders only`
+- `Vehicle name format`
+  - `New line per player`
+  - `Comma delimited`
+- `Show all downed players in leader-only mode`
+
+Behavior notes:
+- When BFT is disabled, Mandown does not show normal or downed BFT markers.
+- In `All players` mode, players in the same vehicle share one marker and downed occupants are labeled as `NAME - DOWNED`.
+- Vehicle markers with downed occupants turn red but do not flash.
+- Individual on-foot downed markers flash on a short interval.
+- In `Leaders only` mode, healthy groups use the leader/group marker, and you can optionally expose all downed non-leaders with individual markers.
 
 **Dependencies:** CBA_A3, ACE3  
-**Optional:** TFAR (Task Force Arrowhead Radio) — used automatically if present
+**Optional:** TFAR (Task Force Arrowhead Radio) - Mandown only plays down sounds when a supported TFAR radio path is available
