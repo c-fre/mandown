@@ -1,6 +1,6 @@
 class CfgPatches {
     class mandown_main {
-        name = "Man Down Mod";
+        name = "Mandown";
         units[] = {};
         weapons[] = {};
         requiredVersion = 0.1;
@@ -37,5 +37,11 @@ class CfgSounds {
         name = "mandown_sos";
         sound[] = {"mandown\main\sounds\sos.ogg", 1.0, 1.0};
         titles[] = {};
+    };
+};
+
+class Extended_PostInit_EventHandlers {
+    class mandown_main {
+        init = "call compile preprocessFileLineNumbers '\mandown\main\XEH_postInit.sqf'";
     };
 };

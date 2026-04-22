@@ -73,6 +73,67 @@ mandown_fnc_bftUpdate = {
 
 mandown_bft_markers = [];
 
+mandown_fnc_refreshBftPfh = {
+    if (!isNil "mandown_bft_pfh") then {
+        [mandown_bft_pfh] call CBA_fnc_removePerFrameHandler;
+        mandown_bft_pfh = nil;
+    };
+
+    if (missionNamespace getVariable ["mandown_bft_enabled", false]) then {
+        mandown_bft_pfh = [mandown_fnc_bftUpdate, missionNamespace getVariable ["mandown_bft_interval", 5], []] call CBA_fnc_addPerFrameHandler;
+    };
+};
+
+mandown_fnc_emitForcedSay3D = {
+    params ["_unit", "_soundClass", ["_distance", 50]];
+
+    if (ACE_player distance _unit > _distance) exitWith {};
+
+    if (isNull objectParent _unit) then {
+        // say3D queues on the source object, so use a local dummy to avoid clipping repeats.
+        private _dummy = "#dynamicsound" createVehicleLocal [0, 0, 0];
+        _dummy attachTo [_unit, [0, 0, 0], "camera"];
+        _dummy say3D [_soundClass, _distance, 1, false];
+
+        [{
+            detach _this;
+            deleteVehicle _this;
+        }, _dummy, 5] call CBA_fnc_waitAndExecute;
+    } else {
+        _unit say3D [_soundClass, _distance, 1, false];
+    };
+};
+
+mandown_fnc_playDownSound = {
+    params ["_unit", "_sound"];
+
+    if (_sound == "none") exitWith {};
+
+    if (isClass (configFile >> "CfgPatches" >> "task_force_radio")) then {
+        private _radio = nil;
+
+        if (!isNil "TFAR_fnc_activeSWRadio") then {
+            _radio = call TFAR_fnc_activeSWRadio;
+        };
+
+        if (isNil "_radio" && {!isNil "TFAR_fnc_activeLRRadio"}) then {
+            _radio = call TFAR_fnc_activeLRRadio;
+        };
+
+        if (!isNil "_radio" && {!isNil "TFAR_fnc_sendRadioSound"}) exitWith {
+            [_radio, _sound] call TFAR_fnc_sendRadioSound;
+        };
+    };
+
+    if (!local _unit) exitWith {};
+
+    private _distance = getArray (configFile >> "CfgSounds" >> _sound >> "sound") param [3, 50];
+    private _targets = allPlayers inAreaArray [ASLToAGL getPosASL _unit, _distance, _distance, 0, false, _distance];
+    if (_targets isEqualTo []) exitWith {};
+
+    ["mandown_forceSay3D", [_unit, _sound, _distance], _targets] call CBA_fnc_targetEvent;
+};
+
 
 // === Register CBA Settings ===
 
@@ -81,10 +142,12 @@ mandown_bft_markers = [];
     "mandown_bft_interval",
     "SLIDER",
     "BFT update interval (seconds)",
-    ["Man Down Mod", "BFT Ext."],
+    ["Mandown", "BFT Ext."],
     [0, 30, 5, 1],
     true,
-    {},
+    {
+        call mandown_fnc_refreshBftPfh;
+    },
     true
 ] call CBA_fnc_addSetting;
 
@@ -92,7 +155,7 @@ mandown_bft_markers = [];
     "mandown_bft_showAll",
     "CHECKBOX",
     "Show all players (unchecked = leaders only)",
-    ["Man Down Mod", "BFT Ext."],
+    ["Mandown", "BFT Ext."],
     true,
     true
 ] call CBA_fnc_addSetting;
@@ -101,13 +164,11 @@ mandown_bft_markers = [];
     "mandown_bft_enabled",
     "CHECKBOX",
     "Enable BFT",
-    ["Man Down Mod", "BFT Ext."],
+    ["Mandown", "BFT Ext."],
     false,
     true,
     {
-        if (_this && { isNil "mandown_bft_pfh" }) then {
-            mandown_bft_pfh = [mandown_fnc_bftUpdate, missionNamespace getVariable ["mandown_bft_interval", 5], []] call CBA_fnc_addPerFrameHandler;
-        };
+        call mandown_fnc_refreshBftPfh;
     }
 ] call CBA_fnc_addSetting;
 
@@ -116,7 +177,7 @@ mandown_bft_markers = [];
     "mandown_allowDownedVoice",
     "CHECKBOX",
     "Allow downed players to speak",
-    ["Man Down Mod", "Utilities"],
+    ["Mandown", "Utilities"],
     true,
     false,
     {}
@@ -126,7 +187,7 @@ mandown_bft_markers = [];
     "mandown_mapIcon",
     "CHECKBOX",
     "Show unconscious player icons on map",
-    ["Man Down Mod", "Utilities"],
+    ["Mandown", "Utilities"],
     true,
     false,
     {}
@@ -136,7 +197,7 @@ mandown_bft_markers = [];
     "mandown_mapAccess",
     "CHECKBOX",
     "Allow map access while unconscious",
-    ["Man Down Mod", "Utilities"],
+    ["Mandown", "Utilities"],
     true,
     false,
     {}
@@ -146,7 +207,7 @@ mandown_bft_markers = [];
     "mandown_soundChoice",
     "LIST",
     "Down sound",
-    ["Man Down Mod", "Utilities"],
+    ["Mandown", "Utilities"],
     [
         ["none", "mandown_fah", "mandown_ginge", "mandown_mimimi", "mandown_reverb", "mandown_sos"],
         ["None", "Fah", "Ginge", "Mimimi", "Reverb", "SOS"],
@@ -158,23 +219,36 @@ mandown_bft_markers = [];
     }
 ] call CBA_fnc_addSetting;
 
+call mandown_fnc_refreshBftPfh;
+player setVariable ["mandown_soundChoice", missionNamespace getVariable ["mandown_soundChoice", "mandown_sos"], true];
+
 
 // === Unconscious map icon for all players ===
-findDisplay 12 displayCtrl 51 ctrlAddEventHandler ["Draw", {
-    if !(missionNamespace getVariable ["mandown_mapIcon", true]) exitWith {};
-    {
-        if (_x getVariable ["ACE_isUnconscious", false]) then {
-            (_this select 0) drawIcon [
-                '\A3\ui_f\data\igui\cfg\actions\heal_ca.paa',
-                [1, 0, 0, 1],
-                getPosASL _x,
-                24, 24, 0,
-                name _x,
-                1, 0.03, "TahomaB", "right"
-            ];
-        };
-    } forEach allPlayers;
-}];
+[{
+    !isNull findDisplay 12
+}, {
+    private _map = (findDisplay 12) displayCtrl 51;
+
+    _map ctrlAddEventHandler ["Draw", {
+        if !(missionNamespace getVariable ["mandown_mapIcon", true]) exitWith {};
+        {
+            if (_x getVariable ["ACE_isUnconscious", false]) then {
+                (_this select 0) drawIcon [
+                    '\A3\ui_f\data\igui\cfg\actions\heal_ca.paa',
+                    [1, 0, 0, 1],
+                    getPosASL _x,
+                    24, 24, 0,
+                    name _x,
+                    1, 0.03, "TahomaB", "right"
+                ];
+            };
+        } forEach allPlayers;
+    }];
+}, []] call CBA_fnc_waitUntilAndExecute;
+
+["mandown_forceSay3D", {
+    _this call mandown_fnc_emitForcedSay3D;
+}] call CBA_fnc_addEventHandler;
 
 // === Unconscious events ===
 ["ace_unconscious", {
@@ -198,22 +272,7 @@ findDisplay 12 displayCtrl 51 ctrlAddEventHandler ["Draw", {
     // Sound on going down
     if (_isUnconscious) then {
         private _sound = _unit getVariable ["mandown_soundChoice", "mandown_sos"];
-
-        if (_sound != "none") then {
-            if (isClass (configFile >> "CfgPatches" >> "task_force_radio")) then {
-                private _radio = [_unit] call TFAR_fnc_activeSWRadio;
-                if (isNil "_radio") then {
-                    _radio = [_unit] call TFAR_fnc_activeLRRadio;
-                };
-                if (!isNil "_radio") then {
-                    [_radio, _sound] call TFAR_fnc_sendRadioSound;
-                } else {
-                    _unit say3D _sound;
-                };
-            } else {
-                _unit say3D _sound;
-            };
-        };
+        [_unit, _sound] call mandown_fnc_playDownSound;
     };
 
 }] call CBA_fnc_addEventHandler;
