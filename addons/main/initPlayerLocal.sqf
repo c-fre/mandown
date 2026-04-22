@@ -151,7 +151,11 @@ mandown_fnc_bftUpdate = {
                 private _markerType = if (_leaderIsUnconscious) then {
                     format ["%1_med", [side _group] call mandown_fnc_getSideMarkerPrefix]
                 } else {
-                    [_group] call ace_common_fnc_getMarkerType
+                    if (!isNil "ace_common_fnc_getMarkerType") then {
+                        [_group] call ace_common_fnc_getMarkerType
+                    } else {
+                        [vehicle _leader, _leader] call mandown_fnc_getVehicleMarkerType
+                    }
                 };
                 private _markerColor = if (_leaderIsUnconscious) then {
                     "ColorRed"
@@ -301,7 +305,7 @@ mandown_fnc_registerSharedSettings = {
         "SLIDER",
         "BFT update interval (seconds)",
         ["Mandown", "BFT Ext."],
-        [0, 30, 5, 1],
+        [1, 30, 5, 1],
         1,
         {
             call mandown_fnc_refreshBftSettings;
@@ -413,7 +417,6 @@ call mandown_fnc_registerClientSettings;
 if (!hasInterface) exitWith {};
 
 call mandown_fnc_refreshBftPfh;
-player setVariable ["mandown_soundChoice", missionNamespace getVariable ["mandown_soundChoice", "mandown_sos"], true];
 
 
 // === Unconscious events ===
@@ -435,8 +438,9 @@ player setVariable ["mandown_soundChoice", missionNamespace getVariable ["mandow
         [_unit, "blockSpeaking", "ace_unconscious", false] call ace_common_fnc_statusEffect_set;
     };
 
-    // Sound on going down
-    if (_isUnconscious) then {
+    // Sound on going down — only send from the downed player's machine so TFAR
+    // routes it as a single transmission rather than every client transmitting at once.
+    if (_isUnconscious && {local _unit}) then {
         private _sound = _unit getVariable ["mandown_soundChoice", "mandown_sos"];
         [_unit, _sound] call mandown_fnc_playDownSound;
     };
