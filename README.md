@@ -1,42 +1,55 @@
 # @mandown - Mandown
 
-Arma 3 all rounder mod for out private server that allows down alerting and lighter BFT settings for more fun, less tac-sim.
+Arma 3 addon focused on downed-player utility and simple BFT/map improvements.
 
-When a player is downed, the mod:
+## Includes
 
-- Can show them through the Mandown BFT marker system with ACE-style marker text sizing
-- Allows local voice & map to be used when downed
-- Plays a configurable radio alert sound over TFAR when supported
+- BFT/map markers for players, groups, and vehicles
+- optional downed-player display on BFT
+- medical markers for downed players
+- multiline or comma-delimited vehicle name labels
+- map access while unconscious
+- optional speaking while unconscious
+- nearby 2D down alerts using the downed player's selected sound
 
-Gameplay settings can be shared by the server or mission through CBA Settings when Mandown is loaded as a regular server `-mod`. The down-sound choice remains a per-player preference via `ESC -> Options -> Addon Options -> Mandown`.
+## Dependencies
 
-## BFT settings
+- `CBA_A3`
+- `ACE3`
 
-Mandown now uses one unified local marker pipeline for both normal BFT tracking and downed-player markers. Marker labels are standard `createMarkerLocal` / `setMarkerTextLocal` labels so they inherit the same map text sizing style as ACE BFT.
+## Settings
 
-Shared CBA settings under `Mandown > BFT Ext.`:
+Mandown uses CBA Settings. Shared settings can be overridden by the server or mission when Mandown is loaded as a regular server `-mod`.
+
+### Shared
+
+`Mandown > BFT Ext.`
 
 - `Enable BFT`
 - `BFT update interval (seconds)`
 - `BFT display mode`
-  - `All players`
-  - `Leaders only`
 - `Vehicle name format`
-  - `New line per player`
-  - `Comma delimited`
+- `Show downed players on BFT`
 - `Show all downed players in leader-only mode`
 
-Behavior notes:
+`Mandown > Utilities`
 
-- When BFT is disabled, Mandown does not show normal or downed BFT markers.
-- In `All players` mode, players in the same vehicle share one marker and downed occupants are labeled as `NAME - DOWNED`.
-- Vehicle markers with downed occupants turn red but do not flash.
-- Individual on-foot downed markers flash on a short interval.
-- In `Leaders only` mode, healthy groups use the leader/group marker, and you can optionally expose all downed non-leaders with individual markers.
+- `Allow downed players to speak`
+- `Allow map access while unconscious`
+- `Down alert range (km)`
 
-**Dependencies:** CBA_A3, ACE3  
-**Optional:** TFAR (Task Force Arrowhead Radio) - Mandown only plays down sounds when a supported TFAR radio path is available
+### Client
 
-### NOTE
+`Mandown > Utilities`
 
-This is my first attempt at a A3 addon & is mostly vibe-coded. Improvements and feedback appreciated!
+- `Down sound`
+- `Receive down alerts`
+- `Down alert volume`
+
+## Notes
+
+- In `All players` mode, players in the same vehicle share one marker.
+- Downed on-foot players use a medical marker, turn red, and blink.
+- Vehicle markers with downed occupants stay as vehicle markers and turn red.
+- If `Show downed players on BFT` is disabled, unconscious players are shown like healthy players.
+- Down alerts are local 2D playback and do not use TFAR radio transmission.

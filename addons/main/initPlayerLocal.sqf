@@ -5,13 +5,6 @@ mandown_fnc_log = {
     diag_log text format ["[Mandown] %1", _message];
 };
 
-mandown_fnc_hasActiveRadio = {
-    params ["_radio"];
-
-    !(isNil "_radio") && {!(_radio isEqualTo "")} && {!(_radio isEqualTo [])}
-};
-
-
 // === BFT Helpers ===
 mandown_bft_markers = [];
 mandown_bft_markerMeta = [];
@@ -34,18 +27,63 @@ mandown_fnc_getSideMarkerPrefix = {
     };
 };
 
+mandown_fnc_isValidMarkerType = {
+    params ["_markerType"];
+
+    isClass (configFile >> "CfgMarkers" >> _markerType)
+};
+
+mandown_fnc_selectMarkerType = {
+    params ["_markerTypes", "_fallbackType"];
+
+    {
+        if ([_x] call mandown_fnc_isValidMarkerType) exitWith {
+            _fallbackType = _x;
+        };
+    } forEach _markerTypes;
+
+    _fallbackType
+};
+
+mandown_fnc_getMedicalMarkerType = {
+    params ["_side"];
+
+    private _sideStr = [_side] call mandown_fnc_getSideMarkerPrefix;
+    private _fallbackType = format ["%1_inf", _sideStr];
+
+    [
+        [format ["%1_med", _sideStr], _fallbackType],
+        _fallbackType
+    ] call mandown_fnc_selectMarkerType;
+};
+
 mandown_fnc_getVehicleMarkerType = {
     params ["_vehicle", "_referenceUnit"];
 
     private _sideStr = [side _referenceUnit] call mandown_fnc_getSideMarkerPrefix;
-
-    switch (true) do {
-        case (_vehicle == _referenceUnit): { format ["%1_inf", _sideStr] };
-        case (_vehicle isKindOf "Air"): { format ["%1_air", _sideStr] };
-        case (_vehicle isKindOf "Tank"): { format ["%1_armor", _sideStr] };
-        case (_vehicle isKindOf "Car"): { format ["%1_motor_inf", _sideStr] };
-        default { format ["%1_inf", _sideStr] };
+    private _fallbackType = format ["%1_inf", _sideStr];
+    private _markerTypes = switch (true) do {
+        case (_vehicle == _referenceUnit): {
+            [_fallbackType]
+        };
+        case (_vehicle isKindOf "Air"): {
+            [format ["%1_air", _sideStr], format ["%1_plane", _sideStr], _fallbackType]
+        };
+        case (_vehicle isKindOf "Tank"): {
+            [format ["%1_armor", _sideStr], _fallbackType]
+        };
+        case (_vehicle isKindOf "Ship"): {
+            [format ["%1_naval", _sideStr], _fallbackType]
+        };
+        case (_vehicle isKindOf "Car"): {
+            [format ["%1_motor_inf", _sideStr], format ["%1_mech_inf", _sideStr], _fallbackType]
+        };
+        default {
+            [_fallbackType]
+        };
     };
+
+    [_markerTypes, _fallbackType] call mandown_fnc_selectMarkerType;
 };
 
 mandown_fnc_formatOccupantLabel = {
@@ -54,16 +92,10 @@ mandown_fnc_formatOccupantLabel = {
     private _separator = if ((missionNamespace getVariable ["mandown_bft_vehicleNameFormat", "multiline"]) isEqualTo "commaDelimited") then {
         ", "
     } else {
-        "\n"
+        toString [10]
     };
 
-    (_occupants apply {
-        if (_x getVariable ["ACE_isUnconscious", false]) then {
-            format ["%1 - DOWNED", name _x]
-        } else {
-            name _x
-        };
-    }) joinString _separator;
+    (_occupants apply { name _x }) joinString _separator;
 };
 
 mandown_fnc_registerBftMarker = {
@@ -87,6 +119,7 @@ mandown_fnc_bftUpdate = {
 
     private _playerSide = playerSide;
     private _displayMode = missionNamespace getVariable ["mandown_bft_displayMode", "allPlayers"];
+    private _showDownedPlayers = missionNamespace getVariable ["mandown_bft_showDownedPlayers", true];
     private _markerIndex = 0;
 
     if (_displayMode isEqualTo "allPlayers") then {
@@ -109,11 +142,11 @@ mandown_fnc_bftUpdate = {
             private _vehicle = _vehicles select _forEachIndex;
             private _occupants = _x;
             private _referenceUnit = _occupants select 0;
-            private _anyUnconscious = (_occupants findIf {_x getVariable ["ACE_isUnconscious", false]}) != -1;
+            private _anyUnconscious = _showDownedPlayers && {(_occupants findIf {_x getVariable ["ACE_isUnconscious", false]}) != -1};
             private _isSingleton = (count _occupants) == 1;
             private _isVehicleStack = _vehicle != _referenceUnit;
             private _markerType = if (_isSingleton && {_anyUnconscious} && {!_isVehicleStack}) then {
-                format ["%1_med", [side _referenceUnit] call mandown_fnc_getSideMarkerPrefix]
+                [side _referenceUnit] call mandown_fnc_getMedicalMarkerType
             } else {
                 [_vehicle, _referenceUnit] call mandown_fnc_getVehicleMarkerType
             };
@@ -147,9 +180,9 @@ mandown_fnc_bftUpdate = {
             private _leader = leader _group;
 
             if !(isNull _leader) then {
-                private _leaderIsUnconscious = alive _leader && {_leader getVariable ["ACE_isUnconscious", false]};
+                private _leaderIsUnconscious = _showDownedPlayers && {alive _leader && {_leader getVariable ["ACE_isUnconscious", false]}};
                 private _markerType = if (_leaderIsUnconscious) then {
-                    format ["%1_med", [side _group] call mandown_fnc_getSideMarkerPrefix]
+                    [side _group] call mandown_fnc_getMedicalMarkerType
                 } else {
                     if (!isNil "ace_common_fnc_getMarkerType") then {
                         [_group] call ace_common_fnc_getMarkerType
@@ -163,7 +196,7 @@ mandown_fnc_bftUpdate = {
                     format ["Color%1", side _group]
                 };
                 private _markerText = if (_leaderIsUnconscious) then {
-                    format ["%1 - DOWNED", name _leader]
+                    name _leader
                 } else {
                     groupId _group
                 };
@@ -179,10 +212,10 @@ mandown_fnc_bftUpdate = {
 
                 _markerIndex = _markerIndex + 1;
 
-                if (_showAllDownedInLeaderOnly) then {
+                if (_showAllDownedInLeaderOnly && {_showDownedPlayers}) then {
                     {
                         private _markerType = if (vehicle _x == _x) then {
-                            format ["%1_med", [side _x] call mandown_fnc_getSideMarkerPrefix]
+                            [side _x] call mandown_fnc_getMedicalMarkerType
                         } else {
                             [vehicle _x, _x] call mandown_fnc_getVehicleMarkerType
                         };
@@ -193,7 +226,7 @@ mandown_fnc_bftUpdate = {
                             getPos (vehicle _x),
                             _markerType,
                             "ColorRed",
-                            format ["%1 - DOWNED", name _x],
+                            name _x,
                             _shouldBlink
                         ] call mandown_fnc_registerBftMarker;
 
@@ -261,39 +294,18 @@ mandown_fnc_playDownSound = {
 
     if (_sound == "none") exitWith {};
 
-    if !(isClass (configFile >> "CfgPatches" >> "task_force_radio")) exitWith {
-        [format ["Down sound skipped for %1: TFAR not loaded.", name _unit]] call mandown_fnc_log;
-    };
+    if (!hasInterface || {isNull player} || {player == _unit}) exitWith {};
+    if !(missionNamespace getVariable ["mandown_receiveDownAlerts", true]) exitWith {};
 
-    private _radio = nil;
-    private _radioType = "";
+    private _rangeKm = missionNamespace getVariable ["mandown_downAlertRangeKm", 1];
+    private _rangeMeters = _rangeKm * 1000;
+    private _volume = missionNamespace getVariable ["mandown_receiveDownAlertVolume", 1];
 
-    if (!isNil "TFAR_fnc_activeSwRadio") then {
-        _radio = call TFAR_fnc_activeSwRadio;
+    if (_rangeMeters <= 0) exitWith {};
+    if ((player distance _unit) > _rangeMeters) exitWith {};
+    if (_volume <= 0) exitWith {};
 
-        if ([_radio] call mandown_fnc_hasActiveRadio) then {
-            _radioType = "SR";
-        };
-    };
-
-    if (_radioType isEqualTo "" && {!isNil "TFAR_fnc_activeLrRadio"}) then {
-        _radio = call TFAR_fnc_activeLrRadio;
-
-        if ([_radio] call mandown_fnc_hasActiveRadio) then {
-            _radioType = "LR";
-        };
-    };
-
-    if (_radioType isEqualTo "") exitWith {
-        [format ["Down sound skipped for %1: no active TFAR radio available.", name _unit]] call mandown_fnc_log;
-    };
-
-    if (isNil "TFAR_fnc_sendRadioSound") exitWith {
-        [format ["Down sound skipped for %1: TFAR runtime does not expose TFAR_fnc_sendRadioSound.", name _unit]] call mandown_fnc_log;
-    };
-
-    [format ["Sending %1 over TFAR %2 radio for %3.", _sound, _radioType, name _unit]] call mandown_fnc_log;
-    [_radio, _sound] call TFAR_fnc_sendRadioSound;
+    playSoundUI [_sound, _volume];
 };
 
 
@@ -346,6 +358,18 @@ mandown_fnc_registerSharedSettings = {
     ] call CBA_fnc_addSetting;
 
     [
+        "mandown_bft_showDownedPlayers",
+        "CHECKBOX",
+        "Show downed players on BFT",
+        ["Mandown", "BFT Ext."],
+        true,
+        false,
+        {
+            call mandown_fnc_refreshBftSettings;
+        }
+    ] call CBA_fnc_addSetting;
+
+    [
         "mandown_bft_showAllDownedInLeaderOnly",
         "CHECKBOX",
         "Show all downed players in leader-only mode",
@@ -389,6 +413,16 @@ mandown_fnc_registerSharedSettings = {
         1,
         {}
     ] call CBA_fnc_addSetting;
+
+    [
+        "mandown_downAlertRangeKm",
+        "SLIDER",
+        "Down alert range (km)",
+        ["Mandown", "Utilities"],
+        [0, 10, 1, 1],
+        1,
+        {}
+    ] call CBA_fnc_addSetting;
 };
 
 mandown_fnc_registerClientSettings = {
@@ -408,6 +442,26 @@ mandown_fnc_registerClientSettings = {
         {
             player setVariable ["mandown_soundChoice", _this, true];
         }
+    ] call CBA_fnc_addSetting;
+
+    [
+        "mandown_receiveDownAlerts",
+        "CHECKBOX",
+        "Receive down alerts",
+        ["Mandown", "Utilities"],
+        true,
+        false,
+        {}
+    ] call CBA_fnc_addSetting;
+
+    [
+        "mandown_receiveDownAlertVolume",
+        "SLIDER",
+        "Down alert volume",
+        ["Mandown", "Utilities"],
+        [0, 3, 1, 2],
+        false,
+        {}
     ] call CBA_fnc_addSetting;
 };
 
@@ -439,8 +493,9 @@ call mandown_fnc_refreshBftPfh;
     };
 
     // Sound on going down — only send from the downed player's machine so TFAR
-    // routes it as a single transmission rather than every client transmitting at once.
-    if (_isUnconscious && {local _unit}) then {
+    // Play the downed player's selected alert locally for clients that are in
+    // range and have not opted out of alerts.
+    if (_isUnconscious) then {
         private _sound = _unit getVariable ["mandown_soundChoice", "mandown_sos"];
         [_unit, _sound] call mandown_fnc_playDownSound;
     };
