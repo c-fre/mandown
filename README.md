@@ -4,14 +4,15 @@ Coop-focused Arma 3 addon for adding lightweight BFT tracking for all players an
 
 ## Includes
 
-- BFT/Map Markers for Players, Groups, and Vehicles
-- Optional Downed-Player Display on BFT
-- Medical Markers for Downed Players
-- Multiline or Comma-Delimited Vehicle Name Labels
-- Map Access While Unconscious
-- Downed Hover Camera via the User's Toggle View Key, with Bound Zoom In/Out Controls
-- Optional Speaking While Unconscious
-- Nearby 2D Down Alerts Using the Downed Player's Selected Sound
+- A less 'proper' BFT, Allowing:
+  - Marking ALL players
+  - Marking downed players
+  - Compact group naming in vehicles
+- More in-the-loop Unconscious Systems:
+  - Map Access While Unconscious
+  - Hover Spectator Camera while Downed
+  - Local Speaking While Unconscious
+  - Nearby UI Down Alerts from A Set List of Sounds
 
 ## Dependencies
 
