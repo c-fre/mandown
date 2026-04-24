@@ -5,6 +5,41 @@ mandown_fnc_log = {
     diag_log text format ["[Mandown] %1", _message];
 };
 
+mandown_downSoundValues = [
+    "none",
+    "mandown_fah",
+    "mandown_ginge",
+    "mandown_mimimi",
+    "mandown_reverb",
+    "mandown_sos",
+    "mandown_boom",
+    "mandown_cat",
+    "mandown_gold",
+    "mandown_laugh",
+    "mandown_oof"
+];
+
+mandown_downSoundLabels = [
+    "None",
+    "Fah",
+    "Ginge",
+    "Mimimi",
+    "Reverb",
+    "SOS",
+    "Boom",
+    "Cat",
+    "Gold",
+    "Laugh",
+    "Oof"
+];
+
+[
+    format [
+        "Registered down sounds: %1",
+        ((mandown_downSoundValues select [1, count mandown_downSoundValues]) joinString ", ")
+    ]
+] call mandown_fnc_log;
+
 // === BFT Helpers ===
 mandown_bft_markers = [];
 mandown_bft_markerMeta = [];
@@ -359,6 +394,22 @@ mandown_fnc_playDownSound = {
     playSoundUI [_sound, _volume];
 };
 
+mandown_fnc_getEffectiveDownSoundChoice = {
+    private _sound = missionNamespace getVariable ["mandown_soundChoice", "mandown_sos"];
+
+    if (missionNamespace getVariable ["mandown_forceDownSoundChoice", false]) then {
+        _sound = missionNamespace getVariable ["mandown_forcedDownSoundChoice", "mandown_sos"];
+    };
+
+    _sound
+};
+
+mandown_fnc_syncLocalPlayerDownSoundChoice = {
+    if (!hasInterface || {isNull player}) exitWith {};
+
+    player setVariable ["mandown_soundChoice", call mandown_fnc_getEffectiveDownSoundChoice, true];
+};
+
 // === Downed Input / Hover Camera Helpers ===
 mandown_fnc_isLocalPlayerUnconscious = {
     hasInterface && {!isNull player} && {alive player} && {player getVariable ["ACE_isUnconscious", false]}
@@ -366,6 +417,13 @@ mandown_fnc_isLocalPlayerUnconscious = {
 
 mandown_fnc_getAceDisableMouseDisplay = {
     uiNamespace getVariable ["ace_common_dlgDisableMouse", displayNull]
+};
+
+mandown_fnc_isDownedInputPassthroughKey = {
+    params ["_key"];
+
+    // Keep Escape available for the pause/respawn flow while downed.
+    _key isEqualTo 1
 };
 
 mandown_fnc_initDownedInputState = {
@@ -480,12 +538,91 @@ mandown_fnc_wasDownedInputRecentlyHandled = {
     (diag_tickTime - (missionNamespace getVariable ["mandown_downedInputLastHandled", -1])) < 0.15
 };
 
-mandown_fnc_closeDownedHoverCamera = {
-    private _restoreInputLock = if (_this isEqualType []) then {
-        _this param [0, true, [true]]
-    } else {
+mandown_fnc_attachDownedHoverCameraInput = {
+    if (!hasInterface) exitWith {};
+    if (isNil "mandown_downedHoverCamera") exitWith {};
+
+    private _display = findDisplay 46;
+    if (isNull _display) exitWith {};
+    if (_display getVariable ["mandown_hoverCameraInputAttached", false]) exitWith {};
+
+    _display setVariable ["mandown_hoverCameraInputAttached", true];
+    mandown_downedHoverCameraMouseEh = _display displayAddEventHandler ["MouseMoving", {
+        _this call mandown_fnc_onDownedHoverCameraMouse
+    }];
+    mandown_downedHoverCameraKeyDownEh = _display displayAddEventHandler ["KeyDown", {
+        _this call mandown_fnc_onDownedHoverCameraKeyDown
+    }];
+    mandown_downedHoverCameraKeyUpEh = _display displayAddEventHandler ["KeyUp", {
+        params ["", "_key"];
+
+        if ([_key] call mandown_fnc_isDownedInputPassthroughKey) exitWith {false};
+
+        [_key] call mandown_fnc_onDownedKeyUp;
         true
+    }];
+};
+
+mandown_fnc_detachDownedHoverCameraInput = {
+    if (!hasInterface) exitWith {};
+
+    private _display = findDisplay 46;
+    if (!isNull _display) then {
+        _display setVariable ["mandown_hoverCameraInputAttached", false];
     };
+
+    if (!isNil "mandown_downedHoverCameraMouseEh") then {
+        if (!isNull _display) then {
+            _display displayRemoveEventHandler ["MouseMoving", mandown_downedHoverCameraMouseEh];
+        };
+        mandown_downedHoverCameraMouseEh = nil;
+    };
+
+    if (!isNil "mandown_downedHoverCameraKeyDownEh") then {
+        if (!isNull _display) then {
+            _display displayRemoveEventHandler ["KeyDown", mandown_downedHoverCameraKeyDownEh];
+        };
+        mandown_downedHoverCameraKeyDownEh = nil;
+    };
+
+    if (!isNil "mandown_downedHoverCameraKeyUpEh") then {
+        if (!isNull _display) then {
+            _display displayRemoveEventHandler ["KeyUp", mandown_downedHoverCameraKeyUpEh];
+        };
+        mandown_downedHoverCameraKeyUpEh = nil;
+    };
+};
+
+mandown_fnc_suspendDownedHoverCamera = {
+    if (!hasInterface) exitWith {};
+    if (isNil "mandown_downedHoverCamera") exitWith {};
+    if (missionNamespace getVariable ["mandown_downedHoverCameraSuspended", false]) exitWith {};
+
+    missionNamespace setVariable ["mandown_downedHoverCameraSuspended", true];
+    call mandown_fnc_detachDownedHoverCameraInput;
+    mandown_downedHoverCamera cameraEffect ["Terminate", "BACK"];
+    player switchCamera "INTERNAL";
+};
+
+mandown_fnc_resumeDownedHoverCamera = {
+    if (!hasInterface) exitWith {};
+    if (isNil "mandown_downedHoverCamera") exitWith {};
+    if !(call mandown_fnc_isLocalPlayerUnconscious) exitWith {};
+
+    missionNamespace setVariable ["mandown_downedHoverCameraSuspended", false];
+    ["unconscious", false] call ace_common_fnc_setDisableUserInputStatus;
+
+    mandown_downedHoverCamera cameraEffect ["Internal", "BACK"];
+    mandown_downedHoverCamera camSetFov (missionNamespace getVariable ["mandown_downedHoverCameraFov", 1.35]);
+    mandown_downedHoverCamera camCommit 0;
+    showCinemaBorder false;
+
+    call mandown_fnc_updateDownedHoverCamera;
+    call mandown_fnc_attachDownedHoverCameraInput;
+};
+
+mandown_fnc_closeDownedHoverCamera = {
+    params [["_restoreInputLock", true, [true]]];
 
     if (!hasInterface) exitWith {};
     if (isNil "mandown_downedHoverCamera") exitWith {};
@@ -495,29 +632,8 @@ mandown_fnc_closeDownedHoverCamera = {
         mandown_downedHoverCameraPfh = nil;
     };
 
-    if (!isNil "mandown_downedHoverCameraMouseEh") then {
-        private _display = findDisplay 46;
-        if (!isNull _display) then {
-            _display displayRemoveEventHandler ["MouseMoving", mandown_downedHoverCameraMouseEh];
-        };
-        mandown_downedHoverCameraMouseEh = nil;
-    };
-    
-    if (!isNil "mandown_downedHoverCameraKeyDownEh") then {
-        private _display = findDisplay 46;
-        if (!isNull _display) then {
-            _display displayRemoveEventHandler ["KeyDown", mandown_downedHoverCameraKeyDownEh];
-        };
-        mandown_downedHoverCameraKeyDownEh = nil;
-    };
-
-    if (!isNil "mandown_downedHoverCameraKeyUpEh") then {
-        private _display = findDisplay 46;
-        if (!isNull _display) then {
-            _display displayRemoveEventHandler ["KeyUp", mandown_downedHoverCameraKeyUpEh];
-        };
-        mandown_downedHoverCameraKeyUpEh = nil;
-    };
+    call mandown_fnc_detachDownedHoverCameraInput;
+    missionNamespace setVariable ["mandown_downedHoverCameraSuspended", false];
 
     mandown_downedHoverCamera cameraEffect ["Terminate", "BACK"];
     camDestroy mandown_downedHoverCamera;
@@ -535,8 +651,10 @@ mandown_fnc_updateDownedHoverCamera = {
         [] call mandown_fnc_closeDownedHoverCamera;
     };
 
+    if (missionNamespace getVariable ["mandown_downedHoverCameraSuspended", false]) exitWith {};
+
     if (visibleMap) exitWith {
-        [false] call mandown_fnc_closeDownedHoverCamera;
+        call mandown_fnc_suspendDownedHoverCamera;
     };
 
     private _cameraPos = (getPosASLVisual player) vectorAdd [0, 0, 3.5];
@@ -594,6 +712,8 @@ mandown_fnc_onDownedHoverCameraMouse = {
 mandown_fnc_onDownedHoverCameraKeyDown = {
     params ["", "_key"];
 
+    if ([_key] call mandown_fnc_isDownedInputPassthroughKey) exitWith {false};
+
     [_key] call mandown_fnc_onDownedKeyDown;
 
     if (["personView"] call mandown_fnc_isActionPressed) exitWith {
@@ -616,7 +736,7 @@ mandown_fnc_onDownedHoverCameraKeyDown = {
         true
     };
 
-    false
+    true
 };
 
 mandown_fnc_openDownedHoverCamera = {
@@ -632,32 +752,14 @@ mandown_fnc_openDownedHoverCamera = {
     missionNamespace setVariable ["mandown_downedHoverCameraYaw", getDirVisual player];
     missionNamespace setVariable ["mandown_downedHoverCameraPitch", -15];
     missionNamespace setVariable ["mandown_downedHoverCameraFov", 1.35];
+    missionNamespace setVariable ["mandown_downedHoverCameraSuspended", false];
 
-    ["unconscious", false] call ace_common_fnc_setDisableUserInputStatus;
-
-    _camera cameraEffect ["Internal", "BACK"];
-    _camera camSetFov (missionNamespace getVariable ["mandown_downedHoverCameraFov", 1.35]);
-    _camera camCommit 0;
-    showCinemaBorder false;
-    call mandown_fnc_updateDownedHoverCamera;
-
-    private _display = findDisplay 46;
-    if (!isNull _display) then {
-        mandown_downedHoverCameraMouseEh = _display displayAddEventHandler ["MouseMoving", {
-            _this call mandown_fnc_onDownedHoverCameraMouse
-        }];
-        mandown_downedHoverCameraKeyDownEh = _display displayAddEventHandler ["KeyDown", {
-            _this call mandown_fnc_onDownedHoverCameraKeyDown
-        }];
-        mandown_downedHoverCameraKeyUpEh = _display displayAddEventHandler ["KeyUp", {
-            params ["", "_key"];
-
-            [_key] call mandown_fnc_onDownedKeyUp;
-            false
-        }];
-    };
+    call mandown_fnc_resumeDownedHoverCamera;
 
     mandown_downedHoverCameraPfh = [{
+        if (missionNamespace getVariable ["mandown_downedHoverCameraSuspended", false]) exitWith {};
+
+        call mandown_fnc_attachDownedHoverCameraInput;
         call mandown_fnc_updateDownedHoverCamera;
         call mandown_fnc_updateDownedHoverCameraZoom;
     }, 0, []] call CBA_fnc_addPerFrameHandler;
@@ -679,7 +781,12 @@ mandown_fnc_openDownedMap = {
 
     call mandown_fnc_markDownedInputHandled;
     missionNamespace setVariable ["mandown_downedMapActive", true];
-    [false] call mandown_fnc_closeDownedHoverCamera;
+
+    if (!isNil "mandown_downedHoverCamera") then {
+        call mandown_fnc_suspendDownedHoverCamera;
+    };
+
+    call mandown_fnc_restoreDownedInputLock;
 
     private _display = call mandown_fnc_getAceDisableMouseDisplay;
     if (!isNull _display) then {
@@ -722,12 +829,16 @@ mandown_fnc_attachDownedInputBridge = {
     _display displayAddEventHandler ["KeyDown", {
         params ["", "_key"];
 
+        if ([_key] call mandown_fnc_isDownedInputPassthroughKey) exitWith {false};
+
         [_key] call mandown_fnc_onDownedKeyDown;
         call mandown_fnc_handleDownedInputActions
     }];
 
     _display displayAddEventHandler ["KeyUp", {
         params ["", "_key"];
+
+        if ([_key] call mandown_fnc_isDownedInputPassthroughKey) exitWith {false};
 
         [_key] call mandown_fnc_onDownedKeyUp;
         false
@@ -742,37 +853,23 @@ mandown_fnc_refreshDownedInputPfh = {
         mandown_downedInputPfh = nil;
     };
 
-    mandown_downedInputShowMapDown = false;
-    mandown_downedInputPersonViewDown = false;
-
     mandown_downedInputPfh = [{
         call mandown_fnc_attachDownedInputBridge;
 
         if ((missionNamespace getVariable ["mandown_downedMapActive", false]) && {!visibleMap}) then {
             missionNamespace setVariable ["mandown_downedMapActive", false];
-            call mandown_fnc_restoreDownedInputLock;
+
+            if (!isNil "mandown_downedHoverCamera" && {missionNamespace getVariable ["mandown_downedHoverCameraSuspended", false]}) then {
+                call mandown_fnc_resumeDownedHoverCamera;
+            } else {
+                call mandown_fnc_restoreDownedInputLock;
+            };
         };
 
         if !(call mandown_fnc_isLocalPlayerUnconscious) exitWith {
-            mandown_downedInputShowMapDown = false;
-            mandown_downedInputPersonViewDown = false;
             missionNamespace setVariable ["mandown_downedMapActive", false];
+            missionNamespace setVariable ["mandown_downedHoverCameraSuspended", false];
         };
-
-        private _showMapDown = (inputAction "showMap") > 0;
-        private _personViewDown = (inputAction "personView") > 0;
-        private _wasRecentlyHandled = call mandown_fnc_wasDownedInputRecentlyHandled;
-
-        if (!_wasRecentlyHandled && {_showMapDown} && {!mandown_downedInputShowMapDown}) then {
-            call mandown_fnc_openDownedMap;
-        };
-
-        if (!_wasRecentlyHandled && {_personViewDown} && {!mandown_downedInputPersonViewDown} && {missionNamespace getVariable ["mandown_downedHoverCameraEnabled", true]}) then {
-            call mandown_fnc_toggleDownedHoverCamera;
-        };
-
-        mandown_downedInputShowMapDown = _showMapDown;
-        mandown_downedInputPersonViewDown = _personViewDown;
     }, 0, []] call CBA_fnc_addPerFrameHandler;
 };
 
@@ -831,7 +928,7 @@ mandown_fnc_registerSharedSettings = {
         "Show downed players on BFT",
         ["Mandown", "BFT Ext."],
         true,
-        false,
+        2,
         {
             call mandown_fnc_refreshBftSettings;
         }
@@ -905,6 +1002,34 @@ mandown_fnc_registerSharedSettings = {
         1,
         {}
     ] call CBA_fnc_addSetting;
+
+    [
+        "mandown_forceDownSoundChoice",
+        "CHECKBOX",
+        "Force down sound for all players",
+        ["Mandown", "Utilities"],
+        false,
+        2,
+        {
+            call mandown_fnc_syncLocalPlayerDownSoundChoice;
+        }
+    ] call CBA_fnc_addSetting;
+
+    [
+        "mandown_forcedDownSoundChoice",
+        "LIST",
+        "Forced down sound",
+        ["Mandown", "Utilities"],
+        [
+            mandown_downSoundValues,
+            mandown_downSoundLabels,
+            (mandown_downSoundValues find "mandown_sos")
+        ],
+        2,
+        {
+            call mandown_fnc_syncLocalPlayerDownSoundChoice;
+        }
+    ] call CBA_fnc_addSetting;
 };
 
 mandown_fnc_registerClientSettings = {
@@ -916,13 +1041,13 @@ mandown_fnc_registerClientSettings = {
         "Down sound",
         ["Mandown", "Utilities"],
         [
-            ["none", "mandown_fah", "mandown_ginge", "mandown_mimimi", "mandown_reverb", "mandown_sos"],
-            ["None", "Fah", "Ginge", "Mimimi", "Reverb", "SOS"],
-            5
+            mandown_downSoundValues,
+            mandown_downSoundLabels,
+            (mandown_downSoundValues find "mandown_sos")
         ],
         false,
         {
-            player setVariable ["mandown_soundChoice", _this, true];
+            call mandown_fnc_syncLocalPlayerDownSoundChoice;
         }
     ] call CBA_fnc_addSetting;
 
@@ -966,6 +1091,7 @@ call mandown_fnc_registerClientSettings;
 
 if (!hasInterface) exitWith {};
 
+call mandown_fnc_syncLocalPlayerDownSoundChoice;
 call mandown_fnc_refreshBftPfh;
 call mandown_fnc_refreshDownedInputPfh;
 
@@ -988,7 +1114,7 @@ call mandown_fnc_refreshDownedInputPfh;
     };
 
     // Re-enable speaking for downed players by removing ACE's blockSpeaking reason
-    if (_isUnconscious && missionNamespace getVariable ["mandown_allowDownedVoice", true]) then {
+    if (_isUnconscious && {missionNamespace getVariable ["mandown_allowDownedVoice", true]}) then {
         [_unit, "blockSpeaking", "ace_unconscious", false] call ace_common_fnc_statusEffect_set;
     };
 
