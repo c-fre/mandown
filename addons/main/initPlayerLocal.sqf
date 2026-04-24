@@ -524,6 +524,54 @@ mandown_fnc_isAnyActionPressed = {
     _return
 };
 
+mandown_fnc_didCurrentKeyTriggerAction = {
+    params ["_key", "_action"];
+
+    call mandown_fnc_initDownedInputState;
+
+    private _return = false;
+
+    {
+        _x params ["_mainKeyArray", "_comboKeyArray", "_isDoubleTap"];
+        _mainKeyArray params ["_mainDik", "_mainDevice"];
+
+        if (_mainDevice != "KEYBOARD") then {
+            continue;
+        };
+
+        if (_mainDik != _key) then {
+            continue;
+        };
+
+        private _comboDikPressed = if (_comboKeyArray isEqualTo []) then {
+            true
+        } else {
+            _comboKeyArray params ["_comboDik", "_comboDevice"];
+            _comboDevice == "KEYBOARD" && {mandown_downedInputCombo getOrDefault [_comboDik, false]}
+        };
+
+        _return = _comboDikPressed &&
+            {((mandown_downedInputMain getOrDefault [_mainDik, [false, 0]]) select 1) > (parseNumber _isDoubleTap)};
+
+        if (_return) exitWith {};
+    } forEach (actionKeysEx _action);
+
+    _return
+};
+
+mandown_fnc_didCurrentKeyTriggerAnyAction = {
+    params ["_key", "_actions"];
+
+    private _return = false;
+    {
+        if ([_key, _x] call mandown_fnc_didCurrentKeyTriggerAction) exitWith {
+            _return = true;
+        };
+    } forEach _actions;
+
+    _return
+};
+
 mandown_fnc_restoreDownedInputLock = {
     if (call mandown_fnc_isLocalPlayerUnconscious) then {
         ["unconscious", true] call ace_common_fnc_setDisableUserInputStatus;
@@ -716,22 +764,22 @@ mandown_fnc_onDownedHoverCameraKeyDown = {
 
     [_key] call mandown_fnc_onDownedKeyDown;
 
-    if (["personView"] call mandown_fnc_isActionPressed) exitWith {
+    if ([_key, "personView"] call mandown_fnc_didCurrentKeyTriggerAction) exitWith {
         call mandown_fnc_toggleDownedHoverCamera;
         true
     };
 
-    if (["ShowMap"] call mandown_fnc_isActionPressed) exitWith {
+    if ([_key, "ShowMap"] call mandown_fnc_didCurrentKeyTriggerAction) exitWith {
         call mandown_fnc_openDownedMap;
         true
     };
 
-    if ([["zoomIn", "zoomInToggle"]] call mandown_fnc_isAnyActionPressed) exitWith {
+    if ([_key, ["zoomIn", "zoomInToggle"]] call mandown_fnc_didCurrentKeyTriggerAnyAction) exitWith {
         [-0.08] call mandown_fnc_adjustDownedHoverCameraFov;
         true
     };
 
-    if ([["zoomOut", "zoomOutToggle"]] call mandown_fnc_isAnyActionPressed) exitWith {
+    if ([_key, ["zoomOut", "zoomOutToggle"]] call mandown_fnc_didCurrentKeyTriggerAnyAction) exitWith {
         [0.08] call mandown_fnc_adjustDownedHoverCameraFov;
         true
     };
@@ -798,13 +846,15 @@ mandown_fnc_openDownedMap = {
 };
 
 mandown_fnc_handleDownedInputActions = {
+    params ["_key"];
+
     if !(call mandown_fnc_isLocalPlayerUnconscious) exitWith {false};
 
-    if (["ShowMap"] call mandown_fnc_isActionPressed) exitWith {
+    if ([_key, "ShowMap"] call mandown_fnc_didCurrentKeyTriggerAction) exitWith {
         call mandown_fnc_openDownedMap
     };
 
-    if (["personView"] call mandown_fnc_isActionPressed) exitWith {
+    if ([_key, "personView"] call mandown_fnc_didCurrentKeyTriggerAction) exitWith {
         if (missionNamespace getVariable ["mandown_downedHoverCameraEnabled", true]) then {
             call mandown_fnc_toggleDownedHoverCamera;
             true
@@ -832,7 +882,7 @@ mandown_fnc_attachDownedInputBridge = {
         if ([_key] call mandown_fnc_isDownedInputPassthroughKey) exitWith {false};
 
         [_key] call mandown_fnc_onDownedKeyDown;
-        call mandown_fnc_handleDownedInputActions
+        [_key] call mandown_fnc_handleDownedInputActions
     }];
 
     _display displayAddEventHandler ["KeyUp", {
